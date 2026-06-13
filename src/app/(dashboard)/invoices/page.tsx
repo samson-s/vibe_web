@@ -3,16 +3,28 @@ import { useEffect, useState } from 'react';
 import {
   Box, Button, Input, Stack, Heading, Table, Dialog, Field, Alert, Flex, Badge, NativeSelect, Text,
 } from '@chakra-ui/react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
-import { listInvoices, createInvoice, updateInvoice, deleteInvoice, type Invoice, type CreateInvoiceRequest, type CreateLineItemRequest } from '@/services/invoices';
+import { Plus, Pencil, Trash2, FileText, X, Loader2 } from 'lucide-react';
+import { listInvoices, getInvoice, createInvoice, updateInvoice, deleteInvoice, type Invoice, type CreateInvoiceRequest, type CreateLineItemRequest } from '@/services/invoices';
 import { listVendors, type Vendor } from '@/services/vendors';
 
 const statusColors: Record<string, string> = { draft: 'gray', sent: 'blue', paid: 'green', overdue: 'red', cancelled: 'orange' };
+
+const fieldStyle = {
+  bg: '#0c0c17',
+  border: '1px solid',
+  borderColor: '#1e1e35',
+  color: 'gray.100',
+  _placeholder: { color: 'gray.700' },
+  _focus: { borderColor: 'violet.600', boxShadow: '0 0 0 1px #7c3aed' },
+  _hover: { borderColor: '#2a2a45' },
+  borderRadius: 'lg',
+} as const;
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Invoice | null>(null);
@@ -38,24 +50,30 @@ export default function InvoicesPage() {
     setDialogOpen(true);
   };
 
-  const openEdit = (inv: Invoice) => {
-    setEditing(inv);
-    setForm({
-      invoice_number: inv.invoice_number,
-      vendor_id: inv.vendor_id || '',
-      amount: inv.amount,
-      tax: inv.tax || 0,
-      status: inv.status,
-      description: inv.description || '',
-      due_date: inv.due_date || '',
-      items: inv.items.map((i) => ({ description: i.description, quantity: i.quantity, unit_price: i.unit_price })),
-    });
-    setDialogOpen(true);
+  const openEdit = async (inv: Invoice) => {
+    setLoadingEdit(inv.id);
+    try {
+      const full = await getInvoice(inv.id);
+      setEditing(full);
+      setForm({
+        invoice_number: full.invoice_number,
+        vendor_id: full.vendor_id || '',
+        amount: full.amount,
+        tax: full.tax || 0,
+        status: full.status,
+        description: full.description || '',
+        due_date: full.due_date || '',
+        items: full.items.map((i) => ({ description: i.description, quantity: i.quantity, unit_price: i.unit_price })),
+      });
+      setDialogOpen(true);
+    } catch {
+      setError('Failed to load invoice details');
+    } finally {
+      setLoadingEdit(null);
+    }
   };
 
-  const addItem = () => {
-    setForm({ ...form, items: [...form.items, { description: '', quantity: 1, unit_price: 0 }] });
-  };
+  const addItem = () => setForm({ ...form, items: [...form.items, { description: '', quantity: 1, unit_price: 0 }] });
 
   const updateItem = (idx: number, field: keyof CreateLineItemRequest, value: string | number) => {
     const items = [...form.items];
@@ -63,11 +81,9 @@ export default function InvoicesPage() {
     setForm({ ...form, items });
   };
 
-  const removeItem = (idx: number) => {
-    setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
-  };
+  const removeItem = (idx: number) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
 
-  const totalAmount = form.items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+  const totalAmount = form.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
 
   const handleSave = async () => {
     try {
@@ -80,11 +96,8 @@ export default function InvoicesPage() {
         amount: totalAmount,
         items: form.items.filter((i) => i.description),
       };
-      if (editing) {
-        await updateInvoice(editing.id, payload);
-      } else {
-        await createInvoice(payload);
-      }
+      if (editing) await updateInvoice(editing.id, payload);
+      else await createInvoice(payload);
       setDialogOpen(false);
       await load();
     } catch { setError('Failed to save invoice'); }
@@ -98,127 +111,210 @@ export default function InvoicesPage() {
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={4}>
-        <Heading size="lg" color={"gray.100"}>Invoices</Heading>
-        <Button onClick={openCreate}><Plus size={16} /> Add Invoice</Button>
+      <Flex justify="space-between" align="center" mb={6}>
+        <Box>
+          <Heading size="lg" color="gray.50" fontWeight="700" letterSpacing="-0.03em">Invoices</Heading>
+          <Text fontSize="sm" color="gray.500" mt={0.5}>Manage your outgoing invoices</Text>
+        </Box>
+        <Button
+          onClick={openCreate}
+          bg="violet.600"
+          color="white"
+          _hover={{ bg: 'violet.700' }}
+          size="sm"
+          borderRadius="lg"
+          fontWeight="600"
+          gap={1.5}
+        >
+          <Plus size={15} /> New Invoice
+        </Button>
       </Flex>
-      {error && <Alert.Root status="error" mb={4}><Alert.Indicator /><Alert.Title>{error}</Alert.Title></Alert.Root>}
-      <Box bg="gray.100" borderRadius="md" boxShadow="sm" overflow="auto">
+
+      {error && (
+        <Alert.Root status="error" mb={4} borderRadius="xl">
+          <Alert.Indicator />
+          <Alert.Title flex={1}>{error}</Alert.Title>
+          <Button size="xs" variant="ghost" onClick={() => setError('')}><X size={12} /></Button>
+        </Alert.Root>
+      )}
+
+      <Box border="1px solid" borderColor="#1a1a2e" borderRadius="xl" overflow="hidden">
+        <Box overflowX="auto">
         <Table.Root variant="outline">
           <Table.Header>
-            <Table.Row>
-              <Table.ColumnHeader>Invoice #</Table.ColumnHeader>
-              <Table.ColumnHeader>Vendor</Table.ColumnHeader>
-              <Table.ColumnHeader>Amount</Table.ColumnHeader>
-              <Table.ColumnHeader>Status</Table.ColumnHeader>
-              <Table.ColumnHeader>Due Date</Table.ColumnHeader>
-              <Table.ColumnHeader w="120px">Actions</Table.ColumnHeader>
+            <Table.Row bg="#0f0f1a">
+              <Table.ColumnHeader color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Invoice #</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Vendor</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Amount</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Status</Table.ColumnHeader>
+              <Table.ColumnHeader color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Due Date</Table.ColumnHeader>
+              <Table.ColumnHeader w="100px" color="gray.500" fontSize="xs" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">Actions</Table.ColumnHeader>
             </Table.Row>
           </Table.Header>
           <Table.Body>
             {invoices.length > 0 ? invoices.map((inv) => (
-              <Table.Row key={inv.id}>
-                <Table.Cell fontWeight="medium">{inv.invoice_number}</Table.Cell>
-                <Table.Cell>{vendors.find((v) => v.id === inv.vendor_id)?.name || inv.vendor_id || '-'}</Table.Cell>
-                <Table.Cell>${Number(inv.amount).toFixed(2)}</Table.Cell>
-                <Table.Cell><Badge colorPalette={statusColors[inv.status] || 'gray'}>{inv.status}</Badge></Table.Cell>
-                <Table.Cell>{inv.due_date || '-'}</Table.Cell>
+              <Table.Row key={inv.id} _hover={{ bg: '#0f0f1a' }} transition="background 0.1s">
+                <Table.Cell fontWeight="600" color="gray.100" fontSize="sm">{inv.invoice_number}</Table.Cell>
+                <Table.Cell color="gray.400" fontSize="sm">{vendors.find((v) => v.id === inv.vendor_id)?.name || '—'}</Table.Cell>
+                <Table.Cell color="gray.200" fontSize="sm" fontWeight="500">${Number(inv.amount).toFixed(2)}</Table.Cell>
+                <Table.Cell><Badge colorPalette={statusColors[inv.status] || 'gray'} borderRadius="full" px={2} fontSize="xs">{inv.status}</Badge></Table.Cell>
+                <Table.Cell color="gray.400" fontSize="sm">{inv.due_date || '—'}</Table.Cell>
                 <Table.Cell>
-                  <Flex gap={2}>
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(inv)}><Pencil size={14} /></Button>
-                    <Button size="sm" variant="ghost" colorScheme="red" onClick={() => handleDelete(inv.id)}><Trash2 size={14} /></Button>
+                  <Flex gap={1}>
+                    <Button size="xs" variant="ghost" color="gray.500" _hover={{ color: 'gray.200', bg: '#1a1a2e' }} borderRadius="md" onClick={() => openEdit(inv)} disabled={loadingEdit === inv.id}>
+                      {loadingEdit === inv.id ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Pencil size={13} />}
+                    </Button>
+                    <Button size="xs" variant="ghost" color="gray.600" _hover={{ color: 'red.400', bg: '#1a1a2e' }} borderRadius="md" onClick={() => handleDelete(inv.id)}>
+                      <Trash2 size={13} />
+                    </Button>
                   </Flex>
                 </Table.Cell>
               </Table.Row>
             )) : (
-              <Table.Row><Table.Cell colSpan={6} textAlign="center">No invoices found</Table.Cell></Table.Row>
+              <Table.Row>
+                <Table.Cell colSpan={6} textAlign="center" py={16}>
+                  <Flex direction="column" align="center" gap={2} color="gray.700">
+                    <FileText size={32} />
+                    <Text fontSize="sm" fontWeight="500" color="gray.600">No invoices yet</Text>
+                    <Text fontSize="xs" color="gray.700">Create your first invoice to get started</Text>
+                  </Flex>
+                </Table.Cell>
+              </Table.Row>
             )}
           </Table.Body>
         </Table.Root>
+        </Box>
       </Box>
 
       <Dialog.Root open={dialogOpen} onOpenChange={(e) => setDialogOpen(e.open)} size="lg">
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>{editing ? 'Edit Invoice' : 'Add Invoice'}</Dialog.Header>
-            <Dialog.Body>
+          <Dialog.Content bg="#13131f" border="1px solid #1e1e35" borderRadius="2xl">
+            <Dialog.Header borderBottom="1px solid #1e1e35" pb={4}>
+              <Box>
+                <Text fontWeight="700" fontSize="md" color="gray.100" letterSpacing="-0.02em">
+                  {editing ? 'Edit Invoice' : 'New Invoice'}
+                </Text>
+                <Text fontSize="xs" color="gray.500" mt={0.5}>
+                  {editing ? `Editing #${editing.invoice_number}` : 'Fill in the details below'}
+                </Text>
+              </Box>
+              <Button size="sm" variant="ghost" color="gray.600" _hover={{ color: 'gray.300' }} ml="auto" onClick={() => setDialogOpen(false)}>
+                <X size={16} />
+              </Button>
+            </Dialog.Header>
+            <Dialog.Body py={5}>
               <Stack gap={4}>
                 <Field.Root required>
-                  <Field.Label>Invoice Number</Field.Label>
-                  <Input value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} />
-                </Field.Root>
-                <Field.Root>
-                  <Field.Label>Vendor</Field.Label>
-                  <NativeSelect.Root>
-                    <NativeSelect.Field value={form.vendor_id || ''} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}>
-                      <option value="">No vendor</option>
-                      {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </NativeSelect.Field>
-                  </NativeSelect.Root>
-                </Field.Root>
-                <Field.Root>
-                  <Field.Label>Status</Field.Label>
-                  <NativeSelect.Root>
-                    <NativeSelect.Field value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                      <option value="draft">Draft</option>
-                      <option value="sent">Sent</option>
-                      <option value="paid">Paid</option>
-                      <option value="overdue">Overdue</option>
-                      <option value="cancelled">Cancelled</option>
-                    </NativeSelect.Field>
-                  </NativeSelect.Root>
-                </Field.Root>
-                <Field.Root>
-                  <Field.Label>Description</Field.Label>
-                  <Input value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-                </Field.Root>
-                <Field.Root>
-                  <Field.Label>Due Date</Field.Label>
-                  <Input type="date" value={form.due_date || ''} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
-                </Field.Root>
-                <Field.Root>
-                  <Field.Label>Tax</Field.Label>
-                  <Input type="number" value={form.tax || 0} onChange={(e) => setForm({ ...form, tax: parseFloat(e.target.value) || 0 })} />
+                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Invoice Number</Field.Label>
+                  <Input {...fieldStyle} value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} placeholder="INV-001" />
                 </Field.Root>
 
+                <Flex gap={3}>
+                  <Field.Root flex={1}>
+                    <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Vendor</Field.Label>
+                    <NativeSelect.Root>
+                      <NativeSelect.Field {...fieldStyle} value={form.vendor_id || ''} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}>
+                        <option value="">No vendor</option>
+                        {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                      </NativeSelect.Field>
+                    </NativeSelect.Root>
+                  </Field.Root>
+                  <Field.Root w="160px">
+                    <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Status</Field.Label>
+                    <NativeSelect.Root>
+                      <NativeSelect.Field {...fieldStyle} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                        <option value="draft">Draft</option>
+                        <option value="sent">Sent</option>
+                        <option value="paid">Paid</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="cancelled">Cancelled</option>
+                      </NativeSelect.Field>
+                    </NativeSelect.Root>
+                  </Field.Root>
+                </Flex>
+
+                <Flex gap={3}>
+                  <Field.Root flex={1}>
+                    <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Due Date</Field.Label>
+                    <Input {...fieldStyle} type="date" value={form.due_date || ''} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+                  </Field.Root>
+                  <Field.Root w="140px">
+                    <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Tax ($)</Field.Label>
+                    <Input {...fieldStyle} type="number" value={form.tax || 0} onChange={(e) => setForm({ ...form, tax: parseFloat(e.target.value) || 0 })} />
+                  </Field.Root>
+                </Flex>
+
+                <Field.Root>
+                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Description</Field.Label>
+                  <Input {...fieldStyle} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional note" />
+                </Field.Root>
+
+                {/* Line items */}
                 <Box>
-                  <Flex justify="space-between" align="center" mb={2}>
-                    <Heading size="sm">Line Items</Heading>
-                    <Button size="sm" variant="outline" onClick={addItem}><Plus size={14} /> Add Item</Button>
+                  <Flex justify="space-between" align="center" mb={3}>
+                    <Text fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Line Items</Text>
+                    <Button size="xs" variant="outline" borderColor="#1e1e35" color="gray.400" _hover={{ bg: '#1a1a2e', color: 'gray.200' }} borderRadius="lg" onClick={addItem} gap={1}>
+                      <Plus size={12} /> Add
+                    </Button>
                   </Flex>
-                  {form.items.map((item, idx) => (
-                    <Flex key={idx} gap={2} mb={2} align="flex-end">
-                      <Box flex={2}>
-                        <Field.Root required>
-                          <Field.Label>Description</Field.Label>
-                          <Input size="sm" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} />
-                        </Field.Root>
-                      </Box>
-                      <Box w="100px">
-                        <Field.Root required>
-                          <Field.Label>Qty</Field.Label>
-                          <Input size="sm" type="number" value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
-                        </Field.Root>
-                      </Box>
-                      <Box w="120px">
-                        <Field.Root required>
-                          <Field.Label>Unit Price</Field.Label>
-                          <Input size="sm" type="number" value={item.unit_price} onChange={(e) => updateItem(idx, 'unit_price', parseFloat(e.target.value) || 0)} />
-                        </Field.Root>
-                      </Box>
-                      <Box pt={5}>
-                        <Button size="sm" variant="ghost" colorScheme="red" onClick={() => removeItem(idx)}><Trash2 size={14} /></Button>
-                      </Box>
+                  {form.items.length === 0 && (
+                    <Box py={4} textAlign="center" border="1px dashed" borderColor="#1e1e35" borderRadius="lg">
+                      <Text fontSize="xs" color="gray.700">No line items. Click "Add" to start.</Text>
+                    </Box>
+                  )}
+                  <Stack gap={2}>
+                    {form.items.map((item, idx) => (
+                      <Flex key={idx} gap={2} align="flex-end">
+                        <Box flex={2}>
+                          <Field.Root required>
+                            <Field.Label fontSize="xs" color="gray.600">Description</Field.Label>
+                            <Input size="sm" {...fieldStyle} value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} />
+                          </Field.Root>
+                        </Box>
+                        <Box w="80px">
+                          <Field.Root required>
+                            <Field.Label fontSize="xs" color="gray.600">Qty</Field.Label>
+                            <Input size="sm" {...fieldStyle} type="number" value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                          </Field.Root>
+                        </Box>
+                        <Box w="110px">
+                          <Field.Root required>
+                            <Field.Label fontSize="xs" color="gray.600">Unit Price</Field.Label>
+                            <Input size="sm" {...fieldStyle} type="number" value={item.unit_price} onChange={(e) => updateItem(idx, 'unit_price', parseFloat(e.target.value) || 0)} />
+                          </Field.Root>
+                        </Box>
+                        <Box pb={1}>
+                          <Button size="sm" variant="ghost" color="gray.700" _hover={{ color: 'red.400' }} onClick={() => removeItem(idx)}>
+                            <X size={14} />
+                          </Button>
+                        </Box>
+                      </Flex>
+                    ))}
+                  </Stack>
+                  {form.items.length > 0 && (
+                    <Flex justify="flex-end" mt={3} pt={3} borderTop="1px solid" borderColor="#1e1e35">
+                      <Text fontSize="sm" fontWeight="700" color="gray.200">Total: ${totalAmount.toFixed(2)}</Text>
                     </Flex>
-                  ))}
-                  <Text fontWeight="bold" textAlign="right" mt={2}>Total: ${totalAmount.toFixed(2)}</Text>
+                  )}
                 </Box>
               </Stack>
             </Dialog.Body>
-            <Dialog.Footer>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave} disabled={!form.invoice_number || form.items.length === 0}>{editing ? 'Update' : 'Create'}</Button>
+            <Dialog.Footer borderTop="1px solid #1e1e35" pt={4} gap={2}>
+              <Button variant="ghost" color="gray.500" _hover={{ color: 'gray.300', bg: '#1a1a2e' }} borderRadius="lg" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={!form.invoice_number || form.items.length === 0}
+                bg="violet.600"
+                color="white"
+                _hover={{ bg: 'violet.700' }}
+                borderRadius="lg"
+                fontWeight="600"
+              >
+                {editing ? 'Save Changes' : 'Create Invoice'}
+              </Button>
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>
