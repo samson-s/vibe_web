@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Box, Button, Input, Stack, Heading, Table, Dialog, Field, Alert, Flex, NativeSelect, Text, HStack, Tag, Spinner, Badge,
 } from '@chakra-ui/react';
-import { Upload, FileText, Check, X, AlertTriangle, Pencil, ArrowLeft, Send, Plus, ExternalLink, Zap } from 'lucide-react';
-import { uploadForExtraction, getExtractionDocument, retryExtraction, abortExtraction, type ExtractionJob, type ExtractionDocument, type ExtractedVendorBillData } from '@/services/extractions';
+import { Upload, FileText, Check, X, AlertTriangle, Pencil, ArrowLeft, Send, Plus, ExternalLink, RotateCcw, Clock, Zap } from 'lucide-react';
+import { listExtractions, uploadForExtraction, getExtractionDocument, retryExtraction, abortExtraction, type ExtractionJob, type ExtractionDocument, type ExtractedVendorBillData } from '@/services/extractions';
 import { createVendorBill, type CreateVendorBillRequest, type CreateLineItemRequest } from '@/services/vendorBills';
 import { listVendors, createVendor, type Vendor } from '@/services/vendors';
 import { useRouter } from 'next/navigation';
@@ -47,11 +47,17 @@ export default function MassUploadVendorBillPage() {
   const [skippedCount, setSkippedCount] = useState(0);
   const [aborting, setAborting] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [recentJobs, setRecentJobs] = useState<ExtractionJob[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
   const pollingRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listVendors().then(setVendors).catch(() => { });
+    listExtractions()
+      .then((jobs) => setRecentJobs(jobs.slice(0, 5)))
+      .catch(() => { })
+      .finally(() => setLoadingRecent(false));
   }, []);
 
   const addFiles = (incoming: File[]) => {
@@ -215,6 +221,47 @@ export default function MassUploadVendorBillPage() {
 
   const reset = () => {
     setStep('upload'); setFiles([]); setJob(null); setError(''); setCreatedCount(0); setSkippedCount(0);
+    pollingRef.current = false;
+    listExtractions()
+      .then((jobs) => setRecentJobs(jobs.slice(0, 5)))
+      .catch(() => { });
+  };
+
+  const handleResume = (selected: ExtractionJob) => {
+    pollingRef.current = false;
+    setJob(selected);
+    setError('');
+    const allSettled = selected.documents.every(
+      (d) => d.status === 'completed' || d.status === 'failed'
+    );
+    if (allSettled) {
+      setStep('review');
+    } else {
+      setStep('extracting');
+      pollJob(selected.id, selected.documents);
+    }
+  };
+
+  const formatRelativeTime = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  const jobSummary = (j: ExtractionJob) => {
+    const total = j.documents.length;
+    const completed = j.documents.filter((d) => d.status === 'completed').length;
+    const failed = j.documents.filter((d) => d.status === 'failed').length;
+    const processing = total - completed - failed;
+    const parts: string[] = [];
+    if (completed) parts.push(`${completed} completed`);
+    if (processing) parts.push(`${processing} processing`);
+    if (failed) parts.push(`${failed} failed`);
+    return `${total} file${total !== 1 ? 's' : ''} · ${parts.join(', ')}`;
   };
 
   /* ─── Done ─── */
@@ -360,6 +407,62 @@ export default function MassUploadVendorBillPage() {
               </Button>
             </Box>
           )}
+        </Box>
+      )}
+
+      {/* Previous sessions */}
+      {step === 'upload' && !loadingRecent && recentJobs.length > 0 && (
+        <Box mt={5} border="1px solid" borderColor="#1a1a2e" borderRadius="2xl" overflow="hidden">
+          <Flex align="center" gap={2} px={4} py={3} borderBottom="1px solid" borderColor="#1a1a2e" bg="#0c0c17">
+            <Clock size={13} color="#4a4a6a" />
+            <Text fontSize="xs" color="gray.600" fontWeight="600" letterSpacing="0.06em" textTransform="uppercase">
+              Previous Sessions
+            </Text>
+          </Flex>
+          <Stack gap={0}>
+            {recentJobs.map((j, idx) => {
+              const allSettled = j.documents.every((d) => d.status === 'completed' || d.status === 'failed');
+              const hasProcessing = j.documents.some((d) => d.status === 'processing' || d.status === 'pending');
+              return (
+                <Flex
+                  key={j.id}
+                  justify="space-between"
+                  align="center"
+                  px={4}
+                  py={3}
+                  borderBottom={idx < recentJobs.length - 1 ? '1px solid' : undefined}
+                  borderColor="#1a1a2e"
+                  _hover={{ bg: '#0c0c17' }}
+                  transition="background 0.1s"
+                >
+                  <Box>
+                    <HStack gap={2} mb={0.5}>
+                      <Text fontSize="sm" color="gray.200" fontWeight="500">{jobSummary(j)}</Text>
+                      {hasProcessing && (
+                        <Tag.Root colorPalette="blue" size="sm">
+                          <Tag.Label>In progress</Tag.Label>
+                        </Tag.Root>
+                      )}
+                    </HStack>
+                    <Text fontSize="xs" color="gray.600">{formatRelativeTime(j.created_at)}</Text>
+                  </Box>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    borderColor="#1e1e35"
+                    color="gray.400"
+                    _hover={{ bg: '#1a1a2e', color: 'violet.300', borderColor: 'violet.800' }}
+                    borderRadius="lg"
+                    onClick={() => handleResume(j)}
+                    gap={1.5}
+                  >
+                    <RotateCcw size={12} />
+                    {allSettled ? 'Review' : 'Resume'}
+                  </Button>
+                </Flex>
+              );
+            })}
+          </Stack>
         </Box>
       )}
 

@@ -35,6 +35,11 @@ export interface ExtractionJob {
   created_at: string;
 }
 
+export async function listExtractions(): Promise<ExtractionJob[]> {
+  const res = await api.get<ExtractionJob[]>('/extractions');
+  return res.data;
+}
+
 export async function uploadForExtraction(files: File[]): Promise<ExtractionJob> {
   const formData = new FormData();
   for (const file of files) {
