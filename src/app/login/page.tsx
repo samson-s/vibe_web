@@ -86,7 +86,7 @@ export default function LoginPage() {
                 <Field.Label fontSize="sm" color="gray.400" mb={1.5} fontWeight="500">
                   Email address
                 </Field.Label>
-                <Box position="relative">
+                <Box position="relative" w="full">
                   <Box position="absolute" left={3} top="50%" transform="translateY(-50%)" color="gray.600" pointerEvents="none">
                     <Mail size={15} />
                   </Box>
@@ -95,6 +95,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
+                    w="full"
                     pl={9}
                     bg="#0c0c17"
                     border="1px solid"
@@ -112,7 +113,7 @@ export default function LoginPage() {
                 <Field.Label fontSize="sm" color="gray.400" mb={1.5} fontWeight="500">
                   Password
                 </Field.Label>
-                <Box position="relative">
+                <Box position="relative" w="full">
                   <Box position="absolute" left={3} top="50%" transform="translateY(-50%)" color="gray.600" pointerEvents="none">
                     <Lock size={15} />
                   </Box>
@@ -121,6 +122,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
+                    w="full"
                     pl={9}
                     bg="#0c0c17"
                     border="1px solid"
