@@ -196,7 +196,7 @@ export default function MassUploadVendorBillPage() {
     let count = 0; let skipped = 0;
     for (const doc of completedDocs) {
       const data = doc.extracted_data;
-      if (!data || !data.bill_number) { skipped++; continue; }
+      if (!data) { skipped++; continue; }
       let vendorId = vendors.find((v) => v.name.toLowerCase() === data.vendor_name.toLowerCase())?.id;
       if (!vendorId && data.vendor_name) {
         try { const nv = await createVendor({ name: data.vendor_name }); vendorId = nv.id; setVendors((p) => [...p, nv]); }
@@ -207,7 +207,7 @@ export default function MassUploadVendorBillPage() {
           description: i.description, quantity: parseFloat(i.quantity) || 1, unit_price: parseFloat(i.unit_price) || 0,
         }));
         await createVendorBill({
-          bill_number: data.bill_number, vendor_id: vendorId || null,
+          bill_number: data.bill_number || null, vendor_id: vendorId || null,
           amount: items.reduce((s, i) => s + i.quantity * i.unit_price, 0),
           tax: data.tax ? parseFloat(data.tax) : null,
           description: data.description || null, due_date: data.due_date || null,
@@ -553,7 +553,7 @@ export default function MassUploadVendorBillPage() {
                           </Flex>
                           <Box>
                             <Text fontWeight="600" color="gray.100" fontSize="sm">{doc.filename}</Text>
-                            <Text fontSize="xs" color="gray.500">Bill #{data.bill_number}</Text>
+                            <Text fontSize="xs" color="gray.500">{data.bill_number ? `Bill #${data.bill_number}` : 'No bill number'}</Text>
                           </Box>
                         </HStack>
                         <Button size="sm" variant="outline" borderColor="#1e1e35" color="gray.400" _hover={{ bg: '#1a1a2e', color: 'gray.200' }} borderRadius="lg" onClick={() => openEdit(doc)} gap={1.5}>
@@ -676,9 +676,9 @@ export default function MassUploadVendorBillPage() {
             </Dialog.Header>
             <Dialog.Body py={5}>
               <Stack gap={4}>
-                <Field.Root required>
-                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Bill Number</Field.Label>
-                  <Input {...fieldStyle} value={editForm.bill_number} onChange={(e) => setEditForm({ ...editForm, bill_number: e.target.value })} />
+                <Field.Root>
+                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Bill Number <Text as="span" color="gray.600" textTransform="none" fontWeight="400">(optional)</Text></Field.Label>
+                  <Input {...fieldStyle} value={editForm.bill_number || ''} onChange={(e) => setEditForm({ ...editForm, bill_number: e.target.value })} />
                 </Field.Root>
                 <Field.Root>
                   <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Vendor</Field.Label>
@@ -771,7 +771,6 @@ export default function MassUploadVendorBillPage() {
               </Button>
               <Button
                 onClick={saveEdit}
-                disabled={!editForm.bill_number}
                 bg="violet.600"
                 color="white"
                 _hover={{ bg: 'violet.700' }}

@@ -10,7 +10,7 @@ export interface LineItem {
 
 export interface VendorBill {
   id: string;
-  bill_number: string;
+  bill_number?: string | null;
   vendor_id?: string | null;
   amount: number;
   tax?: number | null;
@@ -30,7 +30,7 @@ export interface CreateLineItemRequest {
 }
 
 export interface CreateVendorBillRequest {
-  bill_number: string;
+  bill_number?: string | null;
   vendor_id?: string | null;
   amount: number;
   tax?: number | null;

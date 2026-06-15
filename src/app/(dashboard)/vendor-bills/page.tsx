@@ -168,6 +168,7 @@ export default function VendorBillsPage() {
       }
       const payload = {
         ...form,
+        bill_number: form.bill_number || null,
         vendor_id: vendorId,
         tax: form.tax || null,
         description: form.description || null,
@@ -233,7 +234,7 @@ export default function VendorBillsPage() {
           <Table.Body>
             {bills.length > 0 ? bills.map((b) => (
               <Table.Row key={b.id} _hover={{ bg: '#0f0f1a' }} transition="background 0.1s">
-                <Table.Cell fontWeight="600" color="gray.100" fontSize="sm">{b.bill_number}</Table.Cell>
+                <Table.Cell fontWeight="600" color="gray.100" fontSize="sm">{b.bill_number || '—'}</Table.Cell>
                 <Table.Cell color="gray.400" fontSize="sm">{b.vendor_id ? vendors.find((v) => v.id === b.vendor_id)?.name || '—' : '—'}</Table.Cell>
                 <Table.Cell color="gray.200" fontSize="sm" fontWeight="500">${Number(b.amount).toFixed(2)}</Table.Cell>
                 <Table.Cell><Badge colorPalette={statusColors[b.status] || 'gray'} borderRadius="full" px={2} fontSize="xs">{b.status}</Badge></Table.Cell>
@@ -275,7 +276,7 @@ export default function VendorBillsPage() {
                   {editing ? 'Edit Vendor Bill' : 'New Vendor Bill'}
                 </Text>
                 <Text fontSize="xs" color="gray.500" mt={0.5}>
-                  {editing ? `Editing #${editing.bill_number}` : 'Upload a file to auto-fill, or enter details manually'}
+                  {editing ? (editing.bill_number ? `Editing #${editing.bill_number}` : 'Editing bill') : 'Upload a file to auto-fill, or enter details manually'}
                 </Text>
               </Box>
               <Button size="sm" variant="ghost" color="gray.600" _hover={{ color: 'gray.300' }} ml="auto" onClick={() => setDialogOpen(false)}>
@@ -363,9 +364,9 @@ export default function VendorBillsPage() {
                   </Box>
                 )}
 
-                <Field.Root required>
-                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Bill Number</Field.Label>
-                  <Input {...fieldStyle} value={form.bill_number} onChange={(e) => setForm({ ...form, bill_number: e.target.value })} placeholder="BILL-001" />
+                <Field.Root>
+                  <Field.Label fontSize="xs" color="gray.400" fontWeight="600" letterSpacing="0.04em" textTransform="uppercase">Bill Number <Text as="span" color="gray.600" textTransform="none" fontWeight="400">(optional)</Text></Field.Label>
+                  <Input {...fieldStyle} value={form.bill_number || ''} onChange={(e) => setForm({ ...form, bill_number: e.target.value })} placeholder="BILL-001" />
                 </Field.Root>
 
                 <Flex gap={3}>
@@ -468,7 +469,7 @@ export default function VendorBillsPage() {
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={!form.bill_number || form.items.length === 0}
+                disabled={form.items.length === 0}
                 bg="violet.600"
                 color="white"
                 _hover={{ bg: 'violet.700' }}
